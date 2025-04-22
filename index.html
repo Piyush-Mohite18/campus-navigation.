@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Live Campus Navigation</title>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.css" rel="stylesheet"/>
+  <style>
+    /* Global Styles */
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f4f4f9;
+      color: #333;
+      transition: background-color 0.3s ease;
+    }
+
+    /* Map Container */
+    #map {
+      width: 100%;
+      height: 100vh;
+    }
+
+    /* Controls Panel */
+    #controls {
+      padding: 15px 25px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      border-radius: 12px;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+      width: 400px;
+      transition: all 0.3s ease;
+    }
+
+    #controls label {
+      font-size: 16px;
+      font-weight: 600;
+      color: #007cbf;
+    }
+
+    #controls select, #controls button {
+      padding: 10px 15px;
+      font-size: 14px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      background-color: #fafafa;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      outline: none;
+    }
+
+    #controls select:focus, #controls button:focus {
+      border-color: #007cbf;
+    }
+
+    #controls button {
+      background-color: #007cbf;
+      color: white;
+      font-weight: 700;
+    }
+
+    #controls button:hover {
+      background-color: #005f8d;
+    }
+
+    /* Info Card */
+    #infoCard {
+      position: absolute;
+      top: 120px;
+      right: 20px;
+      background: white;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      font-size: 16px;
+      color: #333;
+      width: 280px;
+      transition: 0.3s ease-in-out;
+      display: none;
+    }
+
+    #infoCard h3 {
+      margin-top: 0;
+      color: #007cbf;
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    #infoCard p {
+      margin: 10px 0;
+      font-size: 16px;
+    }
+
+    /* Button Layout */
+    .icon {
+      margin-right: 8px;
+    }
+
+    /* Smooth transition for the map */
+    .zoom-animation {
+      transition: all 0.3s ease-in-out;
+    }
+
+    /* Custom Icons */
+    .mapboxgl-marker {
+      background-image: url('https://img.icons8.com/ios-filled/50/000000/marker.png');
+      background-size: cover;
+      width: 30px;
+      height: 30px;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      #controls {
+        width: 100%;
+        position: static;
+        margin-top: 20px;
+        box-shadow: none;
+      }
+
+      #infoCard {
+        width: 100%;
+        margin-top: 20px;
+      }
+
+      #map {
+        height: 70vh;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Controls Section -->
+  <div id="controls">
+    <div>
+      <label for="destination">Select Destination:</label>
+      <select id="destination">
+        <option value="73.88367516423422,18.459181351404517">Building 2</option>
+        <option value="73.8835843028105,18.460288315096374">Main Building</option>
+        <option value="73.88416703777891,18.458350387535205">Building 4</option>
+        <option value="73.88385830208395,18.457996621351942">Building 5</option>
+        <option value="73.88390385295752,18.457775500169415">Basketball Court</option>
+        <option value="73.88390653242094,18.457495921254193">Playground</option>
+        <option value="73.88407773451284,18.45874112469597">Building 3</option>
+        <option value="73.88411692573803,18.458480900120453">Canteen</option>
+      </select>
+    </div>
+    <div>
+      <button onclick="updateRoute()">Start Navigation</button>
+      <button id="viewToggle" onclick="toggleView()">Switch to 3D View</button>
+    </div>
+  </div>
+
+  <!-- Map Container -->
+  <div id="map"></div>
+
+  <!-- Info Card -->
+  <div id="infoCard"></div>
+
+  <script>
+    let mapStyle = 'mapbox://styles/mapbox/satellite-streets-v11'; // Satellite view with streets
+    let is3D = false; // Tracks current view mode (2D or 3D)
+
+    mapboxgl.accessToken = 'pk.eyJ1IjoidmVkYW50b20iLCJhIjoiY202bWEweDMwMGV2YzJrczRlZ2JtYWZibSJ9.LC_mF9gyUu5vBXuot8FQWQ';
+
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: mapStyle,
+      center: [73.88367516423422, 18.459181351404517],
+      zoom: 17,
+      pitch: 60,
+      bearing: -17.6,
+      antialias: true,
+    });
+
+    const userMarker = new mapboxgl.Marker({ color: "blue" });
+    let destinationMarker;
+    let routeLayerAdded = false;
+
+    // Live user tracking
+    if ("geolocation" in navigator) {
+      navigator.geolocation.watchPosition(position => {
+        const userCoords = [position.coords.longitude, position.coords.latitude];
+        userMarker.setLngLat(userCoords).addTo(map);
+        map.flyTo({ center: userCoords, zoom: 17 });
+      }, error => {
+        console.error("Location error:", error);
+      }, { enableHighAccuracy: true });
+    }
+
+    function updateRoute() {
+      const destinationCoords = document.getElementById("destination").value.split(",");
+      if (destinationMarker) {
+        destinationMarker.setLngLat(destinationCoords);
+      } else {
+        destinationMarker = new mapboxgl.Marker({ color: "red" })
+          .setLngLat(destinationCoords)
+          .addTo(map);
+      }
+
+      const userLngLat = userMarker.getLngLat();
+
+      fetch(`https://api.mapbox.com/directions/v5/mapbox/walking/${userLngLat.lng},${userLngLat.lat};${destinationCoords[0]},${destinationCoords[1]}?geometries=geojson&overview=full&steps=true&access_token=${mapboxgl.accessToken}`)
+        .then(response => response.json())
+        .then(data => {
+          const routeCoordinates = data.routes[0].geometry.coordinates;
+          const distance = (data.routes[0].distance / 1000).toFixed(2);
+          const duration = Math.round(data.routes[0].duration / 60);
+
+          if (routeLayerAdded) {
+            map.removeLayer('route-line');
+            map.removeSource('route');
+          }
+
+          map.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: routeCoordinates
+              }
+            }
+          });
+
+          map.addLayer({
+            id: 'route-line',
+            type: 'line',
+            source: 'route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': '#007cbf', 'line-width': 4 }
+          });
+
+          routeLayerAdded = true;
+
+          const infoCard = document.getElementById("infoCard");
+          infoCard.innerHTML = `
+            <h3>📍 Route Summary</h3>
+            <p><strong>Distance:</strong> ${distance} km</p>
+            <p><strong>Estimated Time:</strong> ${duration} min</p>
+          `;
+          infoCard.style.display = "block";
+        })
+        .catch(error => console.error('Route fetch error:', error));
+    }
+
+    function toggleView() {
+      if (is3D) {
+        map.setPitch(0);
+        document.getElementById("viewToggle").textContent = "Switch to 3D View";
+      } else {
+        map.setPitch(60);
+        document.getElementById("viewToggle").textContent = "Switch to 2D View";
+      }
+      is3D = !is3D;
+    }
+  </script>
+
+</body>
+</html>
